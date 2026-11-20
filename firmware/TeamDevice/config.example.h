@@ -12,7 +12,7 @@ const char* WIFI_PASSWORD = "your-wifi-password";
 
 // WebSocket Configuration
 // Replace with the server URL provided by your instructor
-const char* WEBSOCKET_URL = "wss://YOUR-TEAM.proto.aalto.fi/ws/device";
+const char* WEBSOCKET_URL = "wss://gamma.proto.aalto.fi/ws/device";
 
 // SSL Certificate (Let's Encrypt Root CA - update if needed)
 const char* ROOT_CA_CERT = R"(
