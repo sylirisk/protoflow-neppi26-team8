@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+  E-ink page: type up to six lines of text and send them to the e-ink display of the board
+  running firmware/EinkBoard/EinkBoard.ino. It lists only the devices that registered the
+  actuator "eink", and sends {"t": ["line 1", ...]} to it. The board redraws at most once per
+  MIN_DRAW_INTERVAL_MS (in the sketch), so the page can only say the text was sent.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>E-ink display</title>
+
+    <!-- Team 8 server -->
+    <meta name="protoflow-websocket-url" content="wss://gamma.proto.aalto.fi/ws/app">
+    <script src="https://proto.aalto.fi/protoflow.min.js"></script>
+
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+        .muted { color: #666; }
+        #lines input { display: block; width: 100%; max-width: 20rem; margin: 0.25rem 0; font-family: monospace; font-size: 1rem; }
+        button { margin-left: 0.5rem; }
+        #lines + button { margin: 0.75rem 0 0; }
+    </style>
+</head>
+<body>
+    <h1>E-ink display</h1>
+    <p><span id="status" class="muted">Connecting…</span> <button id="refresh">Refresh devices</button></p>
+    <p><label>Board: <select id="device"></select></label></p>
+
+    <form id="form">
+        <div id="lines"></div>
+        <button type="submit" id="send" disabled>Send to the display</button>
+    </form>
+    <p id="result" class="muted"></p>
+    <p class="muted">
+        The display redraws at most once per interval set in the sketch (1 s while testing; a refresh itself takes about 2.3 s),
+        and then shows the latest text sent. Letters, digits and punctuation work,
+        including ä, ö and å; other characters show as ?.
+    </p>
+
+    <script>
+        const ACTUATOR = 'eink';   // the name in firmware/EinkBoard/EinkBoard.ino
+        const LINES = 6;           // PANEL_LINES in the sketch
+        const MAX_CHARS = 23;      // PANEL_LINE_CHARS in the sketch: longer lines are cut there
+
+        const statusText = document.getElementById('status');
+        const deviceSelect = document.getElementById('device');
+        const sendButton = document.getElementById('send');
+        const resultText = document.getElementById('result');
+
+        const inputs = [];
+        for (let i = 0; i < LINES; i++) {
+            const input = document.createElement('input');
+            input.maxLength = MAX_CHARS;
+            input.placeholder = `Line ${i + 1}`;
+            inputs.push(input);
+        }
+        document.getElementById('lines').append(...inputs);
+
+        // Only the devices that have the e-ink display
+        function showDevices(devices) {
+            const boards = devices.filter((device) =>
+                (device.actuators || []).some((actuator) => actuator.name === ACTUATOR));
+            const chosen = deviceSelect.value;
+            deviceSelect.replaceChildren(...boards.map((device) => new Option(device.deviceName, device.uuid)));
+            if (boards.some((device) => device.uuid === chosen)) deviceSelect.value = chosen;
+            sendButton.disabled = boards.length === 0;
+            resultText.textContent = boards.length === 0
+                ? 'No board with the e-ink display is connected yet. Switch it on, then click Refresh devices.'
+                : '';
+        }
+
+        document.getElementById('form').onsubmit = (event) => {
+            event.preventDefault();
+            const lines = inputs.map((input) => input.value);
+            const sent = ProtoFlow.sendCommand(deviceSelect.value, ACTUATOR, { t: lines });
+            resultText.textContent = sent
+                ? `Sent at ${new Date().toLocaleTimeString()}. The display shows it within the sketch's interval.`
+                : 'Not sent: the page is not connected to the server.';
+        };
+
+        document.getElementById('refresh').onclick = () => ProtoFlow.getDevices().catch(() => {});
+
+        ProtoFlow
+            .on('connect', () => { statusText.textContent = 'Connected'; })
+            .on('disconnect', () => { statusText.textContent = 'Disconnected, trying again…'; })
+            .on('devices', showDevices)
+            .on('error', ({ message }) => { statusText.textContent = message; })
+            .connect();
+    </script>
+</body>
+</html>
