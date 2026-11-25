@@ -452,6 +452,20 @@
             text-align: center;
         }
 
+        .monitor-layout[data-alarm] {
+            --alarm-red: #722d3b;
+        }
+
+        .monitor-layout[data-alarm] .room-display,
+        .monitor-layout[data-alarm] .brand-art {
+            background: var(--alarm-red);
+        }
+
+        .monitor-layout[data-alarm] .brand-art img {
+            filter: grayscale(1);
+            mix-blend-mode: luminosity;
+        }
+
         .room-display h2 {
             font-size: 1rem;
             font-weight: 600;
@@ -462,6 +476,12 @@
             font: 400 clamp(2rem, 6vw, 5.5rem)/1.06 Georgia, serif;
             color: var(--annikki-pink);
             font-variant-numeric: tabular-nums;
+        }
+
+        .room-alarm {
+            font-size: clamp(1.2rem, 4vw, 2rem);
+            font-weight: 700;
+            margin-bottom: 12px;
         }
 
         .room-trend {
@@ -517,16 +537,17 @@
         </header>
 
         <main>
-            <div class="monitor-layout">
+            <div class="monitor-layout" id="monitor-layout">
                 <div class="brand-art">
                     <img src="assets/annikki-brand.png" alt="Annikki. Smart care, simply there." width="3429" height="3429">
                 </div>
                 <section class="room-display" id="room-display" aria-label="Annikki1 readings">
                     <h2>Room temperature</h2>
                     <p class="room-temperature" id="room-temperature">No data yet</p>
+                    <p class="room-alarm" id="room-alarm" role="status">Waiting for alarm status</p>
                     <figure class="room-trend">
                         <figcaption>Live temperature · Last 5 minutes</figcaption>
-                        <canvas id="room-trend" role="img" aria-label="Recent room temperature readings in degrees Celsius"></canvas>
+                        <canvas id="room-trend" role="img" aria-label="Recent room temperature readings with alarm thresholds at 15 °C and 27 °C"></canvas>
                     </figure>
                 </section>
             </div>
@@ -568,7 +589,9 @@
         const deviceSelect = document.getElementById('device-select');
         const deviceSummary = document.getElementById('device-summary');
         const sensorGrid = document.getElementById('sensor-grid');
+        const monitorLayout = document.getElementById('monitor-layout');
         const roomTemperature = document.getElementById('room-temperature');
+        const roomAlarm = document.getElementById('room-alarm');
         const roomTrend = document.getElementById('room-trend');
         const trendContext = roomTrend.getContext('2d');
         const trendWindowMs = 5 * 60_000;
@@ -603,18 +626,20 @@
             const y = value => 10 + (45 - value) / (45 - 10) * (height - 20);
             const x = time => left + (time - start) / trendWindowMs * (right - left);
 
-            trendContext.strokeStyle = '#fff7f33b';
+            trendContext.strokeStyle = '#ddb3b1';
             trendContext.fillStyle = '#ddb3b1';
             trendContext.font = '13px system-ui';
             trendContext.textBaseline = 'middle';
+            trendContext.setLineDash([5, 5]);
             trendContext.beginPath();
-            for (const degrees of [10, 20, 30, 40]) {
+            for (const degrees of [15, 27]) {
                 trendContext.fillText(degrees + ' °C', 2, y(degrees));
                 trendContext.moveTo(left, y(degrees));
                 trendContext.lineTo(right, y(degrees));
             }
             trendContext.stroke();
 
+            trendContext.setLineDash([]);
             trendContext.strokeStyle = '#fff7f3';
             trendContext.fillStyle = '#fff7f3';
             trendContext.lineWidth = 2;
@@ -635,8 +660,16 @@
 
         function resetRoomDisplay() {
             roomTemperature.textContent = 'No data yet';
+            roomAlarm.textContent = 'Waiting for alarm status';
+            delete monitorLayout.dataset.alarm;
             temperatureSamples.length = 0;
             drawTrend();
+        }
+
+        function showTemperatureAlarm(state) {
+            roomAlarm.textContent = state === 1 ? 'Too hot' : state === -1 ? 'Too cold' : 'Normal';
+            if (state === 0) delete monitorLayout.dataset.alarm;
+            else monitorLayout.dataset.alarm = String(state);
         }
 
         function deviceName(device) {
@@ -962,6 +995,9 @@
                     roomTemperature.textContent = data.value.toFixed(1) + ' °C';
                     temperatureSamples.push({ time: Date.now(), value: data.value });
                     drawTrend();
+                }
+                if (data.sensor === 'temperature_alarm' && [-1, 0, 1].includes(data.value)) {
+                    showTemperatureAlarm(data.value);
                 }
             }
 
