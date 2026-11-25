@@ -546,7 +546,7 @@
                     <p class="room-temperature" id="room-temperature">No data yet</p>
                     <p class="room-alarm" id="room-alarm" role="status">Waiting for alarm status</p>
                     <figure class="room-trend">
-                        <figcaption>Live temperature · Last 5 minutes</figcaption>
+                        <figcaption>Live temperature · Last 2 minutes</figcaption>
                         <canvas id="room-trend" role="img" aria-label="Recent room temperature readings with alarm thresholds at 15 °C and 27 °C"></canvas>
                     </figure>
                 </section>
@@ -594,7 +594,7 @@
         const roomAlarm = document.getElementById('room-alarm');
         const roomTrend = document.getElementById('room-trend');
         const trendContext = roomTrend.getContext('2d');
-        const trendWindowMs = 5 * 60_000;
+        const trendWindowMs = 2 * 60_000;
         const temperatureSamples = [];
         const roomBoardName = 'Room board';
         const roomDisplayName = 'Annikki1';
