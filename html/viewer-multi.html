@@ -7,7 +7,7 @@
     <!-- ============================================ -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ProtoFlow Multi-Sensor Viewer</title>  <!-- TRY: Change this to your name! -->
+    <title>Annikki | Room Temperature Monitor</title>
 
     <!-- ProtoFlow Server Configuration -->
     <meta name="protoflow-websocket-url" content="wss://gamma.proto.aalto.fi/ws/app">
@@ -359,6 +359,138 @@
                 font-size: 22px;
             }
         }
+        :root {
+            --annikki-teal: #1d4746;
+            --annikki-pink: #ddb3b1;
+            --annikki-paper: #f7f2ee;
+            --annikki-ink: #203d3b;
+        }
+
+        body {
+            background: var(--annikki-paper);
+            color: var(--annikki-ink);
+            padding: clamp(16px, 4vw, 48px);
+        }
+
+        .container {
+            max-width: 1180px;
+        }
+
+        .monitor-toolbar,
+        .monitor-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .monitor-toolbar {
+            justify-content: space-between;
+            margin: 0 0 24px;
+            text-align: left;
+        }
+
+        .monitor-toolbar h1 {
+            margin: 0;
+            color: var(--annikki-ink);
+            font: 400 clamp(1.7rem, 4vw, 2.65rem)/1.1 Georgia, serif;
+        }
+
+        .connection-status,
+        .monitor-controls .device-picker {
+            margin: 0;
+        }
+
+        .connection-status .status-text {
+            color: #435c59;
+        }
+
+        .monitor-controls .btn-primary,
+        .monitor-controls .btn-primary:hover {
+            background: var(--annikki-teal);
+            color: white;
+        }
+
+        .monitor-controls .btn-primary:disabled {
+            opacity: .65;
+        }
+
+        .monitor-toolbar :focus-visible {
+            outline: 2px solid var(--annikki-teal);
+            outline-offset: 3px;
+        }
+
+        .monitor-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .brand-art {
+            position: relative;
+            min-height: 320px;
+            overflow: hidden;
+            border-radius: 24px;
+            background: var(--annikki-teal);
+        }
+
+        .brand-art img {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scale(1.18);
+        }
+
+        .room-display {
+            min-width: 0;
+            padding: clamp(20px, 4vw, 44px);
+            border-radius: 24px;
+            background: var(--annikki-teal);
+            color: #fff7f3;
+            text-align: center;
+        }
+
+        .room-display h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .room-temperature {
+            margin: 8px 0 12px;
+            font: 400 clamp(2rem, 6vw, 5.5rem)/1.06 Georgia, serif;
+            color: var(--annikki-pink);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .room-trend {
+            max-width: 620px;
+            margin: 24px auto 0;
+            padding: 12px 12px 4px;
+            border: 1px solid #fff7f33b;
+            border-radius: 16px;
+            background: #0a211f33;
+            font-size: .875rem;
+        }
+
+        .room-trend canvas {
+            display: block;
+            width: 100%;
+            height: 136px;
+            margin-top: 8px;
+        }
+
+        @media (max-width: 720px) {
+            .monitor-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .brand-art {
+                min-height: 0;
+                aspect-ratio: 2.4;
+            }
+        }
     </style>
 </head>
 <body>
@@ -368,39 +500,43 @@
     <!-- ============================================ -->
 
     <div class="container">
-        <!-- Page Header -->
-        <header>
-            <h1>ProtoFlow Multi-Sensor Viewer</h1>  <!-- TRY: Change this text! -->
-            <p class="subtitle">One card for every sensor on your ESP32</p>
+        <header class="monitor-toolbar">
+            <h1>Room Temperature Monitor</h1>
+            <div class="monitor-controls">
+                <div class="status-bar connection-status" role="status">
+                    <span class="status-dot" id="status-dot" aria-hidden="true"></span>
+                    <span class="status-text" id="status-text">Disconnected</span>
+                </div>
+                <button class="btn-primary" id="connect-btn">Connect</button>
+                <div class="device-picker" id="device-picker">
+                    <select id="device-select" aria-label="Device">
+                        <option value="">Select your device...</option>
+                    </select>
+                </div>
+            </div>
         </header>
 
-        <!-- Connection Card -->
-        <div class="card">
-            <div class="status-bar">
-                <span class="status-dot" id="status-dot"></span>
-                <span class="status-text" id="status-text">Click Connect to start</span>
+        <main>
+            <div class="monitor-layout">
+                <div class="brand-art">
+                    <img src="assets/annikki-brand.png" alt="Annikki. Smart care, simply there." width="3429" height="3429">
+                </div>
+                <section class="room-display" id="room-display" aria-label="Annikki1 readings">
+                    <h2>Room temperature</h2>
+                    <p class="room-temperature" id="room-temperature">No data yet</p>
+                    <figure class="room-trend">
+                        <figcaption>Live temperature · Last 5 minutes</figcaption>
+                        <canvas id="room-trend" role="img" aria-label="Recent room temperature readings in degrees Celsius"></canvas>
+                    </figure>
+                </section>
             </div>
 
-            <button class="btn-primary" id="connect-btn">Connect</button>
+            <!-- Which device we are showing, and how many sensors it has -->
+            <p class="device-summary" id="device-summary"></p>
 
-            <div class="device-picker" id="device-picker">
-                <select id="device-select">
-                    <option value="">Select your device...</option>
-                </select>
-            </div>
-        </div>
-
-        <!-- Which device we are showing, and how many sensors it has -->
-        <p class="device-summary" id="device-summary"></p>
-
-        <!-- Sensor Cards: empty here, JavaScript adds one card per sensor -->
-        <div class="sensor-grid" id="sensor-grid"></div>
-
-        <!-- Footer -->
-        <footer>
-            <p>ProtoFlow - IoT Prototyping Platform</p>
-            <p>Save this page and edit it in VS Code!</p>
-        </footer>
+            <!-- Sensor Cards: empty here, JavaScript adds one card per sensor -->
+            <div class="sensor-grid" id="sensor-grid"></div>
+        </main>
     </div>
 
     <!-- ============================================ -->
@@ -432,6 +568,91 @@
         const deviceSelect = document.getElementById('device-select');
         const deviceSummary = document.getElementById('device-summary');
         const sensorGrid = document.getElementById('sensor-grid');
+        const roomTemperature = document.getElementById('room-temperature');
+        const roomTrend = document.getElementById('room-trend');
+        const trendContext = roomTrend.getContext('2d');
+        const trendWindowMs = 5 * 60_000;
+        const temperatureSamples = [];
+        const roomBoardName = 'Room board';
+        const roomDisplayName = 'Annikki1';
+        const alarmBoardName = 'Alarm board';
+        const hiddenSensors = new Set(['temperature_alarm', 'overheat', 'slider']);
+
+        function showsSensorCard(name) {
+            return !hiddenSensors.has(name) && !(currentDeviceName === roomDisplayName && name === 'room_temp');
+        }
+
+        function drawTrend() {
+            const now = Date.now();
+            const start = now - trendWindowMs;
+            while (temperatureSamples.length && temperatureSamples[0].time < start) {
+                temperatureSamples.shift();
+            }
+
+            const width = roomTrend.clientWidth;
+            const height = roomTrend.clientHeight;
+            if (!trendContext || width < 64 || !height) return;
+
+            const scale = window.devicePixelRatio || 1;
+            roomTrend.width = Math.round(width * scale);
+            roomTrend.height = Math.round(height * scale);
+            trendContext.scale(scale, scale);
+
+            const left = 50;
+            const right = width - 8;
+            const y = value => 10 + (45 - value) / (45 - 10) * (height - 20);
+            const x = time => left + (time - start) / trendWindowMs * (right - left);
+
+            trendContext.strokeStyle = '#fff7f33b';
+            trendContext.fillStyle = '#ddb3b1';
+            trendContext.font = '13px system-ui';
+            trendContext.textBaseline = 'middle';
+            trendContext.beginPath();
+            for (const degrees of [10, 20, 30, 40]) {
+                trendContext.fillText(degrees + ' °C', 2, y(degrees));
+                trendContext.moveTo(left, y(degrees));
+                trendContext.lineTo(right, y(degrees));
+            }
+            trendContext.stroke();
+
+            trendContext.strokeStyle = '#fff7f3';
+            trendContext.fillStyle = '#fff7f3';
+            trendContext.lineWidth = 2;
+            trendContext.beginPath();
+            temperatureSamples.forEach(({ time, value }, index) => {
+                if (index === 0) trendContext.moveTo(x(time), y(value));
+                else trendContext.lineTo(x(time), y(value));
+            });
+            trendContext.stroke();
+
+            const latest = temperatureSamples.at(-1);
+            if (latest) {
+                trendContext.beginPath();
+                trendContext.arc(x(latest.time), y(latest.value), 3, 0, Math.PI * 2);
+                trendContext.fill();
+            }
+        }
+
+        function resetRoomDisplay() {
+            roomTemperature.textContent = 'No data yet';
+            temperatureSamples.length = 0;
+            drawTrend();
+        }
+
+        function deviceName(device) {
+            return device.deviceName || device.name;
+        }
+
+        function updateDeviceStatus() {
+            const label = currentDeviceName === alarmBoardName
+                ? 'Alarm board · Connected'
+                : 'Connected to ' + currentDeviceName;
+            updateStatus('connected', label);
+        }
+
+        window.addEventListener('resize', drawTrend);
+        setInterval(drawTrend, 1000);
+        drawTrend();
 
         // Track connection state
         let isConnected = false;
@@ -491,7 +712,12 @@
 
         // --- Show "Device: X · N sensors" above the cards ---
         function updateSummary() {
-            const count = Object.keys(cards).length;
+            const count = Object.keys(cards).length + (currentDeviceName === roomDisplayName ? 1 : 0);
+            if (currentDeviceName === alarmBoardName) {
+                deviceSummary.textContent = 'Alarm board receives commands. Select Annikki1 for live temperature.';
+                deviceSummary.classList.add('visible');
+                return;
+            }
             deviceSummary.textContent = count === 0
                 ? currentDeviceName + ' · Waiting for your sensors to send data...'
                 : currentDeviceName + ' · ' + count + (count === 1 ? ' sensor' : ' sensors');
@@ -628,6 +854,7 @@
                 ProtoFlow.disconnect();
                 isConnected = false;
                 currentDevice = null;
+                resetRoomDisplay();
                 updateStatus('', 'Disconnected');
                 connectBtn.textContent = 'Connect';
                 devicePicker.classList.remove('visible');
@@ -650,18 +877,18 @@
                 ProtoFlow.unsubscribeFromDevice(currentDevice);
             }
 
-            // Subscribe to this device
-            ProtoFlow.subscribeToDevice(uuid);
+            if (currentDevice !== uuid) resetRoomDisplay();
             currentDevice = uuid;
             currentDeviceName = option.textContent;
-            updateStatus('connected', 'Receiving data from ' + currentDeviceName);
+            updateDeviceStatus();
 
             // Make one card for every sensor this device registered
             clearCards();
             const sensors = (device && device.sensors) || [];
             console.log(`[CARDS] ${currentDeviceName} has ${sensors.length} sensors:`, sensors.map(s => s.name));
-            sensors.forEach(sensor => createCard(sensor));
+            sensors.filter(sensor => showsSensorCard(sensor.name)).forEach(sensor => createCard(sensor));
             updateSummary();
+            ProtoFlow.subscribeToDevice(uuid);
         });
 
         // --- ProtoFlow Event Handlers ---
@@ -684,7 +911,8 @@
             devices.forEach(device => {
                 const option = document.createElement('option');
                 option.value = device.uuid;
-                option.textContent = device.deviceName || device.name || device.uuid.substring(0, 8);
+                const name = deviceName(device);
+                option.textContent = name === roomBoardName ? roomDisplayName : name || device.uuid.substring(0, 8);
                 deviceSelect.appendChild(option);
             });
 
@@ -692,21 +920,32 @@
             devicePicker.classList.add('visible');
 
             // Keep the current device selected if it is still in the list
+            const roomBoard = devices.find(device => deviceName(device) === roomBoardName);
             const current = devices.find(d => d.uuid === currentDevice);
-            if (current) {
+            if (current && (deviceName(current) !== alarmBoardName || !roomBoard)) {
                 deviceSelect.value = currentDevice;
+                updateDeviceStatus();
                 // Subscribe again (needed after an automatic reconnect; harmless otherwise)
                 ProtoFlow.subscribeToDevice(currentDevice);
                 // Add cards for any sensors the device registered since we last looked
                 (current.sensors || []).forEach(sensor => {
-                    if (!cards[sensor.name]) createCard(sensor);
+                    if (showsSensorCard(sensor.name) && !cards[sensor.name]) createCard(sensor);
                 });
                 return;
             }
 
-            // If only one device, auto-select it
-            if (devices.length === 1) {
-                deviceSelect.value = devices[0].uuid;
+            if (currentDevice) {
+                ProtoFlow.unsubscribeFromDevice(currentDevice);
+                currentDevice = null;
+                resetRoomDisplay();
+                clearCards();
+                deviceSummary.classList.remove('visible');
+            }
+            updateStatus('connected', devices.length ? 'Connected · Select a device' : 'Connected · No devices found');
+
+            const defaultDevice = roomBoard || (devices.length === 1 ? devices[0] : null);
+            if (defaultDevice) {
+                deviceSelect.value = defaultDevice.uuid;
                 deviceSelect.dispatchEvent(new Event('change'));
             }
         });
@@ -718,7 +957,16 @@
             // Only process if it's from our subscribed device
             if (data.device !== currentDevice) return;
 
+            if (currentDeviceName === roomDisplayName) {
+                if (data.sensor === 'room_temp' && Number.isFinite(data.value)) {
+                    roomTemperature.textContent = data.value.toFixed(1) + ' °C';
+                    temperatureSamples.push({ time: Date.now(), value: data.value });
+                    drawTrend();
+                }
+            }
+
             // Find this sensor's card, or make a new one if we have not seen it yet
+            if (!showsSensorCard(data.sensor)) return;
             const card = cards[data.sensor] || createCard({ name: data.sensor });
 
             // Update the value
@@ -728,6 +976,7 @@
         // When disconnected
         ProtoFlow.on('disconnect', () => {
             isConnected = false;
+            resetRoomDisplay();
             updateStatus('', 'Disconnected');
             connectBtn.textContent = 'Connect';
             connectBtn.disabled = false;

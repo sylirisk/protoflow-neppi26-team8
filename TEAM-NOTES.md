@@ -2,6 +2,10 @@
 
 What is true only for team 8: wiring, modules without a component, extra libraries and decisions. AI tools read this before changing a sketch or a page (AGENTS.md); add new facts here, not to AGENTS.md.
 
+## Product
+
+The product is **Annikki**. The expo viewer is `html/viewer-multi.html` and uses the team's teal-and-pink Annikki artwork.
+
 ## Server
 
 `gamma.proto.aalto.fi`: boards connect to `wss://gamma.proto.aalto.fi/ws/device`, pages to `wss://gamma.proto.aalto.fi/ws/app`. The sketches need ProtoFlow library 1.4.0 or newer (`ProtoFlow.zip` from proto.aalto.fi/dist) for `ProtoFlow.sendCommand`.
@@ -32,13 +36,13 @@ Each sketch's top comment has its wiring table; this is the same.
 | Slider | middle column, 1st below I²C (34 / 35) | Grove cable | 34 |
 | Chainable RGB LED | right column 2, top (17 16) | Grove cable into the LED's IN | 16 CI, 17 DI |
 | E-ink, cable 1 | right column 2, 3rd (19 18) | yellow SCK, red VIN, black GND | 18 |
-| E-ink, cable 2 | right column 2, bottom (25 23) | yellow MOSI | 23 |
+| E-ink, cable 2 | right column 2, bottom (25 23) | MOSI (green jumper, yellow on Grove side) | 23 |
 | E-ink, cable 3 | left column, 3rd (32 / 33) | yellow ECS, white D/C | 32, 33 |
-| E-ink, cable 4 | left column, top (26 / 27) | yellow BUSY, white RST | 26, 27 |
+| E-ink, cable 4 | left column, top (26 / 27) | BUSY (blue jumper, yellow on Grove side), white RST | 26, 27 |
 
 "(34 / 35)" means 34 is printed above 35. The e-ink cables are Grove-to-jumper cables to the eInk Breakout Friend; its MISO stays unconnected (no SRAM is used), and the wires that go nowhere are insulated.
 
-**Board B, `Alarm board`** (`firmware/AlarmBoard/`), not yet tested on hardware:
+**Board B, `Alarm board`** (`firmware/AlarmBoard/`), flashed on 2026-11-25. Both boards joined `aalto open` with an empty password and registered with gamma. On the Room board slider test, the user confirmed the buzzer and LED activated for both cold and hot alarms:
 
 | Module | Port (printed numbers) | GPIO |
 |---|---|---|
@@ -47,7 +51,7 @@ Each sketch's top comment has its wiring table; this is the same.
 
 The buzzer stays off GPIO 2, 5, 14 and 15: they change during startup, so it would chirp at every reset.
 
-- Board A: the slider gives the room temperature, `18 + slider % × 27 / 100` °C, sent as `room_temp`. `overheat` turns true above 30.0 °C and false again below 29.5 °C. While it is true, A's LED blinks red. A sends `alarm` = `overheat` to `Alarm board` whenever it changes and every 10 s. The e-ink shows the whole degrees and "TOO HOT!".
+- Board A appears as **Annikki1** in the HTML viewer and registers as `Room board`. The slider simulates 10–45 °C. The alarm starts at 15 °C or below or 27 °C or above and clears at 15.5 °C or 26.5 °C, respectively. Board A sends the Boolean `alarm` command to Board B on alarm state changes and every 10 seconds. The e-ink display shows the rounded temperature and the active hot or cold warning.
 - Board B: on `alarm` = true, 6 beeps of 100 ms with 100 ms pauses, and the LED blinks red until `alarm` = false. A repeated true doesn't beep again.
 
 ## Test board (`firmware/EinkBoard/`)
@@ -73,5 +77,5 @@ Each sketch's `config.h` holds the WiFi password and stays out of git.
 ## Decisions (2026-11-20)
 
 - Two boards instead of one; board A tells board B directly with `ProtoFlow.sendCommand`, so no page needs to be open.
-- Both boards have a Grove chainable RGB LED. The alarm beeps once per rise above 30 °C (6 × 100 ms); the LEDs blink red as long as it is above.
+- Both boards have a Grove chainable RGB LED. The alarm beeps once when activated (6 × 100 ms). Both LEDs blink red while a temperature alarm is active.
 - Still open: the e-ink refresh interval (wanted: about 1 s; a full refresh takes 2.3 s and flashes, partial refresh would need the GxEPD2 library); the web app.

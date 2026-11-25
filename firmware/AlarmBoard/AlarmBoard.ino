@@ -1,7 +1,7 @@
 /*
  * AlarmBoard.ino - Team 8's board B, the alarm. Board A ("Room board", firmware/RoomBoard/)
- * sends it alarm = true when the room gets warmer than 30 °C and false when it is back below
- * 29.5 °C (ProtoFlow.sendCommand); a web page can send the same command.
+ * sends a Boolean alarm command for high or low temperature (ProtoFlow.sendCommand).
+ * A web page can send the same command.
  *
  * On true, the buzzer beeps 6 times, 100 ms on and 100 ms off (about 1.2 s), and the RGB LED
  * blinks red until false comes. Another true while the alarm is on changes nothing, so board A

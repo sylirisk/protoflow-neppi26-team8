@@ -1,17 +1,12 @@
 /*
- * RoomBoard.ino - Team 8's board A: a Grove slider simulates the room temperature, 18-45 °C,
- * which the 2.66" e-ink display shows. Above 30 °C the board's RGB LED blinks red, and it tells
- * board B ("Alarm board", firmware/AlarmBoard/) to sound the alarm.
+ * RoomBoard.ino - Team 8's board A. The slider simulates 10–45 °C and the
+ * e-ink display shows the temperature and a hot or cold warning.
  *
- * Sends to the web app: "room_temp" (°C, 18-45), "overheat" (true above 30 °C, false again only
- * below 29.5 °C, so that a slider resting at 30 °C doesn't toggle it), and the slider component's
- * own "slider" (0-100 %). Sends to board B: alarm = true / false whenever overheat changes, and
- * the current value again every 10 s, so that board B catches up after a restart
- * (ProtoFlow.sendCommand, library 1.4.0 or newer). No web page needs to be open.
+ * Publishes room_temp, temperature_alarm (-1 cold, 0 normal, 1 hot), the
+ * legacy overheat flag, and slider. Sends the Alarm board a boolean command
+ * when the alarm state changes and every 10 seconds. No web page is needed.
  *
- * The display shows the temperature in whole degrees and "TOO HOT!". A refresh takes 2.3 s, so a
- * FreeRTOS task of its own draws it and loop() keeps running. The display, the LED and the alarm
- * work without a connection too.
+ * E-ink refreshes on its own task so the board stays responsive.
  *
  * WIRING on the Grove-Base Shield for ESP32 v1.1. Every cable goes into a Grove port. A port's
  * pins are GND, VCC, white, yellow; the yellow wire (a module's signal) is the GPIO printed over
@@ -72,16 +67,19 @@ const unsigned long MIN_DRAW_INTERVAL_MS = 1000;   // a refresh itself takes 2.3
 // ---------------------------------------------------------------------------------------------
 // Temperature and alarm
 // ---------------------------------------------------------------------------------------------
-const float TEMP_MIN = 18.0;              // slider at 0 %
+const float TEMP_MIN = 10.0;              // slider at 0 %
 const float TEMP_MAX = 45.0;              // slider at 100 %
-const float ALARM_ON_ABOVE = 30.0;
-const float ALARM_OFF_BELOW = 29.5;
+const float COLD_ALARM_AT = 15.0;
+const float COLD_CLEAR_AT = 15.5;
+const float HOT_ALARM_AT = 27.0;
+const float HOT_CLEAR_AT = 26.5;
+enum class TemperatureAlarm { Cold = -1, Normal = 0, Hot = 1 };
 const unsigned long ALARM_RESEND_MS = 10000;
 const unsigned long BLINK_MS = 500;
 const unsigned long TEMP_SEND_MIN_MS = 200;
 
 float roomTemp = TEMP_MIN;
-bool overheat = false;
+TemperatureAlarm temperatureAlarm = TemperatureAlarm::Normal;
 float lastSentTemp = -100;
 unsigned long lastTempSendMs = 0;
 unsigned long lastAlarmSendMs = 0;
@@ -89,7 +87,7 @@ bool ledOn = false;
 
 // What the display should show. Written by loop() and read by drawTask, both under panelLock.
 int panelTemp = -100;          // whole degrees; -100 = nothing yet
-bool panelOverheat = false;
+TemperatureAlarm panelAlarm = TemperatureAlarm::Normal;
 bool panelChanged = false;
 SemaphoreHandle_t panelLock;
 
@@ -97,7 +95,15 @@ float temperatureFromSlider() {
     return TEMP_MIN + slider.getValue() * (TEMP_MAX - TEMP_MIN) / 100.0f;
 }
 
-void drawPanel(int temp, bool hot) {
+TemperatureAlarm alarmForTemperature(float temperature, TemperatureAlarm previous) {
+    if (temperature <= COLD_ALARM_AT) return TemperatureAlarm::Cold;
+    if (temperature >= HOT_ALARM_AT) return TemperatureAlarm::Hot;
+    if (previous == TemperatureAlarm::Cold && temperature < COLD_CLEAR_AT) return previous;
+    if (previous == TemperatureAlarm::Hot && temperature > HOT_CLEAR_AT) return previous;
+    return TemperatureAlarm::Normal;
+}
+
+void drawPanel(int temp, TemperatureAlarm alarm) {
     display.clearBuffer();
     display.setTextColor(EPD_BLACK);
     display.setTextSize(2);
@@ -111,16 +117,16 @@ void drawPanel(int temp, bool hot) {
     display.write(0xF8);               // degree sign in the built-in font (code page 437)
     display.print("C");
 
-    if (hot) {                         // white on a black band
+    if (alarm != TemperatureAlarm::Normal) {                         // white on a black band
         display.fillRect(0, 112, display.width(), 40, EPD_BLACK);
         display.setTextColor(EPD_WHITE);
         display.setTextSize(3);
         display.setCursor(10, 120);
-        display.print("TOO HOT!");
+        display.print(alarm == TemperatureAlarm::Hot ? "TOO HOT!" : "TOO COLD!");
     }
     unsigned long startMs = millis();
     display.display();                 // blocks this task until the refresh is over
-    PF_INFO("eink: " + String(temp) + " C" + (hot ? ", too hot" : "") + ", drawn in " + String(millis() - startMs) + " ms");
+    PF_INFO("eink: " + String(temp) + " C" + ", drawn in " + String(millis() - startMs) + " ms");
 }
 
 // The drawing task. Only it touches the display after setup(). While a refresh runs, the
@@ -129,13 +135,13 @@ void drawTask(void*) {
     unsigned long lastDrawMs = 0;   // 0 = nothing drawn yet
     for (;;) {
         int temp = 0;
-        bool hot = false;
+        TemperatureAlarm alarm = TemperatureAlarm::Normal;
         bool draw = false;
         if (lastDrawMs == 0 || millis() - lastDrawMs >= MIN_DRAW_INTERVAL_MS) {
             xSemaphoreTake(panelLock, portMAX_DELAY);
             if (panelChanged) {
                 temp = panelTemp;
-                hot = panelOverheat;
+                alarm = panelAlarm;
                 panelChanged = false;
                 draw = true;
             }
@@ -143,7 +149,7 @@ void drawTask(void*) {
         }
         if (draw) {
             lastDrawMs = millis();
-            drawPanel(temp, hot);
+            drawPanel(temp, alarm);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
@@ -151,7 +157,9 @@ void drawTask(void*) {
 
 void sendAlarmState() {
     lastAlarmSendMs = millis();
-    ProtoFlow.sendCommand(ALARM_BOARD, "alarm", overheat);
+    ProtoFlow.sendSensorData("temperature_alarm", static_cast<float>(temperatureAlarm));
+    ProtoFlow.sendSensorData("overheat", temperatureAlarm == TemperatureAlarm::Hot);
+    ProtoFlow.sendCommand(ALARM_BOARD, "alarm", temperatureAlarm != TemperatureAlarm::Normal);
 }
 
 void setup() {
@@ -166,7 +174,8 @@ void setup() {
     // Values this board computes itself (docs/guides/add-custom-sensor.md)
     //                  name         type           data_type  min       max       unit  description
     ProtoFlow.addSensor("room_temp", "temperature", "float",   TEMP_MIN, TEMP_MAX, "°C", "Room temperature (simulated by the slider)");
-    ProtoFlow.addSensor("overheat",  "state",       "boolean", 0,        1,        "",   "Room above 30 °C");
+    ProtoFlow.addSensor("overheat", "state", "boolean", 0, 1, "", "High temperature alarm active");
+    ProtoFlow.addSensor("temperature_alarm", "state", "float", -1, 1, "", "Temperature alarm: -1 cold, 0 normal, 1 hot");
 
     // E-ink display. It keeps its last image without power until the first reading is drawn.
     display.begin(THINKINK_MONO);   // black and white only: refresh 2.3 s instead of 13 s
@@ -187,8 +196,9 @@ void setup() {
     ProtoFlow.onRegistration([](bool accepted, String message) {
         if (accepted) {
             slider.sendInitial();
+            roomTemp = temperatureFromSlider();
+            temperatureAlarm = alarmForTemperature(roomTemp, temperatureAlarm);
             ProtoFlow.sendSensorData("room_temp", roomTemp);
-            ProtoFlow.sendSensorData("overheat", overheat);
             lastSentTemp = roomTemp;
             sendAlarmState();
         } else {
@@ -205,26 +215,23 @@ void loop() {
     slider.loop();
     rgb.loop();
 
-    // Temperature and overheat, with hysteresis
     roomTemp = temperatureFromSlider();
-    bool wasOverheat = overheat;
-    if (!overheat && roomTemp > ALARM_ON_ABOVE) overheat = true;
-    if (overheat && roomTemp < ALARM_OFF_BELOW) overheat = false;
+    const TemperatureAlarm previousAlarm = temperatureAlarm;
+    temperatureAlarm = alarmForTemperature(roomTemp, temperatureAlarm);
 
-    // LED: blinks red while overheat, off otherwise
-    bool blinkOn = overheat && (millis() / BLINK_MS) % 2 == 0;
+    const bool blinkOn = temperatureAlarm != TemperatureAlarm::Normal && (millis() / BLINK_MS) % 2 == 0;
     if (blinkOn != ledOn) {
         ledOn = blinkOn;
         if (ledOn) rgb.setColor(255, 0, 0);
         else rgb.off();
     }
 
-    // Display: when the whole degrees or overheat change; drawTask draws the latest
+    // Refresh when the displayed temperature or warning changes.
     int wholeDegrees = (int)lroundf(roomTemp);
-    if (wholeDegrees != panelTemp || overheat != panelOverheat) {
+    if (wholeDegrees != panelTemp || temperatureAlarm != panelAlarm) {
         xSemaphoreTake(panelLock, portMAX_DELAY);
         panelTemp = wholeDegrees;
-        panelOverheat = overheat;
+        panelAlarm = temperatureAlarm;
         panelChanged = true;
         xSemaphoreGive(panelLock);
     }
@@ -234,15 +241,12 @@ void loop() {
         return;
     }
 
-    // To the web app and board B
-    if (overheat != wasOverheat) {
-        PF_INFO(String("overheat: ") + (overheat ? "true" : "false") + " at " + String(roomTemp, 1) + " C");
-        ProtoFlow.sendSensorData("overheat", overheat);
-        sendAlarmState();
-    } else if (millis() - lastAlarmSendMs >= ALARM_RESEND_MS) {
+    const bool refreshReadings = millis() - lastAlarmSendMs >= ALARM_RESEND_MS;
+    if (temperatureAlarm != previousAlarm || refreshReadings) {
         sendAlarmState();
     }
-    if (fabsf(roomTemp - lastSentTemp) >= 0.1f && millis() - lastTempSendMs >= TEMP_SEND_MIN_MS) {
+    if (refreshReadings || (fabsf(roomTemp - lastSentTemp) >= 0.1f &&
+                            millis() - lastTempSendMs >= TEMP_SEND_MIN_MS)) {
         lastTempSendMs = millis();
         lastSentTemp = roomTemp;
         ProtoFlow.sendSensorData("room_temp", roomTemp);
